@@ -240,6 +240,8 @@ class AI {
     this.difficulty = difficulty;
     this.huntStack = []; // cells to try next (Medium/Hard)
     this.hitChain = []; // consecutive hits for Hard mode direction
+    this.chainShip = null; // track which ship the current chain targets
+    this.lastMoveWasChain = false; // whether last move came from directional logic
   }
 
   getMove(board) {
@@ -266,6 +268,7 @@ class AI {
   }
 
   hardMove(board) {
+    this.lastMoveWasChain = false;
     // If we have a direction from hitChain, continue it
     if (this.hitChain.length >= 2) {
       const last = this.hitChain[this.hitChain.length - 1];
@@ -274,14 +277,19 @@ class AI {
       const dc = last.c - prev.c;
       const next = { r: last.r + dr, c: last.c + dc };
       if (next.r >= 0 && next.r < 10 && next.c >= 0 && next.c < 10 && !board.shots[next.r][next.c]) {
+        this.lastMoveWasChain = true;
         return next;
       }
       // Try reverse direction from start of chain
       const first = this.hitChain[0];
       const rev = { r: first.r - dr, c: first.c - dc };
       if (rev.r >= 0 && rev.r < 10 && rev.c >= 0 && rev.c < 10 && !board.shots[rev.r][rev.c]) {
+        this.lastMoveWasChain = true;
         return rev;
       }
+      // Direction exhausted, reset chain and fall through to hunt
+      this.hitChain = [];
+      this.chainShip = null;
     }
     // Fall back to hunt mode
     return this.huntMove(board);
@@ -292,7 +300,16 @@ class AI {
 
     if (result === 'hit') {
       if (this.difficulty === 'hard') {
-        this.hitChain.push({ r, c });
+        // Only add to chain if it's the same ship or starting a new chain
+        if (this.hitChain.length === 0 || this.chainShip === ship) {
+          this.hitChain.push({ r, c });
+          this.chainShip = ship;
+        } else if (!this.lastMoveWasChain) {
+          // Hit on a different ship from a non-chain move — start new chain
+          this.hitChain = [{ r, c }];
+          this.chainShip = ship;
+        }
+        // If it was a chain move that hit a different ship, keep existing chain
       }
       // Add adjacent cells to hunt stack
       const adj = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }];
@@ -303,6 +320,14 @@ class AI {
       }
     }
 
+    if (result === 'miss') {
+      if (this.difficulty === 'hard' && this.lastMoveWasChain) {
+        // Missed while following a direction — reset chain to try other approaches
+        this.hitChain = [];
+        this.chainShip = null;
+      }
+    }
+
     if (result === 'sunk') {
       // Remove sunk ship cells from hunt stack
       if (ship) {
@@ -310,6 +335,7 @@ class AI {
         this.huntStack = this.huntStack.filter(h => !sunkCells.has(`${h.r},${h.c}`));
       }
       this.hitChain = [];
+      this.chainShip = null;
     }
   }
 }
