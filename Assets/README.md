@@ -6,8 +6,8 @@ Pixel art naval ship sprites from the [Sea Warfare set on OpenGameArt](https://o
 
 | Grid Spaces | Ship Name  | Player File              | Enemy File              |
 |-------------|-----------|--------------------------|-------------------------|
-| 5           | Battleship | `player_Battleship.png`  | `enemy_Battleship.png`  |
-| 4           | Carrier    | `player_Carrier.png`     | `enemy_Carrier.png`     |
+| 5           | Carrier    | `player_Carrier.png`     | `enemy_Carrier.png`     |
+| 4           | Battleship | `player_Battleship.png`  | `enemy_Battleship.png`  |
 | 3           | Submarine  | `player_Submarine.png`   | `enemy_Submarine.png`   |
 | 2           | Patrol     | `player_Patrol.png`      | `enemy_Patrol.png`      |
 
@@ -18,11 +18,11 @@ Use `player_` prefixed files for the user's fleet and `enemy_` prefixed files fo
 ```js
 // Example: loading a player ship sprite
 const img = new Image();
-img.src = 'Assets/player_Battleship.png'; // 5-space ship
+img.src = 'Assets/player_Carrier.png'; // 5-space ship
 
 // Example: loading an enemy ship sprite
 const enemyImg = new Image();
-enemyImg.src = 'Assets/enemy_Carrier.png'; // 4-space ship
+enemyImg.src = 'Assets/enemy_Battleship.png'; // 4-space ship
 ```
 
 > **Note:** The folder is capitalized as `Assets/` — use this exact casing in file paths.
