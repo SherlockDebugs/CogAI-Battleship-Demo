@@ -694,7 +694,7 @@ function onOpponentCellClick(r, c) {
   if (opponentBoard.allSunk()) {
     phase = 'over';
     stopTimer();
-    playSound('win');
+    setTimeout(() => playSound('win'), 300);
     document.getElementById('phase-msg').textContent = `You Win! 🎉 ${shotCount} shots in ${formatTime(elapsedSeconds)}`;
     document.getElementById('phase-msg').className = 'text-lg font-semibold mb-4 h-8 text-center text-green-400';
     document.getElementById('play-again-btn').classList.remove('hidden');
@@ -741,7 +741,8 @@ function aiTurn() {
   if (playerBoard.allSunk()) {
     phase = 'over';
     stopTimer();
-    playSound('lose');
+    // Delay lose sound so it doesn't collide with the sunk sound
+    setTimeout(() => playSound('lose'), 300);
     document.getElementById('phase-msg').textContent = `You Lost! AI sank your fleet in ${formatTime(elapsedSeconds)}.`;
     document.getElementById('phase-msg').className = 'text-lg font-semibold mb-4 h-8 text-center text-red-400';
     document.getElementById('play-again-btn').classList.remove('hidden');
