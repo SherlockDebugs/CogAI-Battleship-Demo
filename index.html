@@ -155,9 +155,17 @@
 // ============================================================
 // SOUND SYSTEM
 // ============================================================
+const SOUND_MAP = { hit: 'hit-sound', miss: 'miss-sound', sunk: 'sunk-sound', win: 'win-sound', lose: 'lose-sound' };
+
+function stopAllSounds() {
+  for (const id of Object.values(SOUND_MAP)) {
+    const el = document.getElementById(id);
+    if (el) { el.pause(); el.currentTime = 0; }
+  }
+}
+
 function playSound(type) {
-  const map = { hit: 'hit-sound', miss: 'miss-sound', sunk: 'sunk-sound', win: 'win-sound', lose: 'lose-sound' };
-  const el = document.getElementById(map[type]);
+  const el = document.getElementById(SOUND_MAP[type]);
   if (!el) return;
   el.currentTime = 0;
   el.volume = 0.7;
@@ -694,7 +702,8 @@ function onOpponentCellClick(r, c) {
   if (opponentBoard.allSunk()) {
     phase = 'over';
     stopTimer();
-    setTimeout(() => playSound('win'), 300);
+    stopAllSounds();
+    playSound('win');
     document.getElementById('phase-msg').textContent = `You Win! 🎉 ${shotCount} shots in ${formatTime(elapsedSeconds)}`;
     document.getElementById('phase-msg').className = 'text-lg font-semibold mb-4 h-8 text-center text-green-400';
     document.getElementById('play-again-btn').classList.remove('hidden');
@@ -741,8 +750,8 @@ function aiTurn() {
   if (playerBoard.allSunk()) {
     phase = 'over';
     stopTimer();
-    // Delay lose sound so it doesn't collide with the sunk sound
-    setTimeout(() => playSound('lose'), 300);
+    stopAllSounds();
+    playSound('lose');
     document.getElementById('phase-msg').textContent = `You Lost! AI sank your fleet in ${formatTime(elapsedSeconds)}.`;
     document.getElementById('phase-msg').className = 'text-lg font-semibold mb-4 h-8 text-center text-red-400';
     document.getElementById('play-again-btn').classList.remove('hidden');
