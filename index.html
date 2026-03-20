@@ -18,6 +18,17 @@
 
     /* Ship colors */
     .cell-ship { background-color: #64748b; }
+    .board-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+    .ship-overlay {
+      position: absolute;
+      pointer-events: none;
+      image-rendering: pixelated;
+      z-index: 2;
+      opacity: 0.92;
+    }
     .cell-hit { background-color: #ef4444; }
     .cell-miss { background-color: #3b82f6; }
     .cell-sunk { background-color: #f97316; }
@@ -351,6 +362,23 @@ const SHIP_DEFS = [
   { name: 'Destroyer', size: 2 },
 ];
 
+// Map game ship names to sprite asset filenames (by grid size per Assets/README.md)
+// 5-space→Battleship sprite, 4-space→Carrier sprite, 3-space→Submarine sprite, 2-space→Patrol sprite
+const SPRITE_MAP = {
+  'Carrier':    'Battleship',   // 5 spaces
+  'Battleship': 'Carrier',     // 4 spaces
+  'Cruiser':    'Submarine',   // 3 spaces
+  'Submarine':  'Submarine',   // 3 spaces
+  'Destroyer':  'Patrol',      // 2 spaces
+};
+
+function getSpritePath(shipName, isPlayer, horizontal) {
+  const prefix = isPlayer ? 'player' : 'enemy';
+  const assetName = SPRITE_MAP[shipName] || shipName;
+  const suffix = horizontal ? '_h' : '';
+  return `Assets/${prefix}_${assetName}${suffix}.png`;
+}
+
 let playerBoard, opponentBoard, ai;
 let difficulty = 'medium';
 let phase = 'placement'; // 'placement' | 'battle' | 'over'
@@ -414,6 +442,8 @@ function initGame() {
 function renderBoard(containerId, board, isPlayer) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'board-wrapper';
   const table = document.createElement('div');
   table.style.display = 'inline-grid';
   table.style.gridTemplateColumns = `repeat(11, 36px)`;
@@ -471,7 +501,59 @@ function renderBoard(containerId, board, isPlayer) {
       table.appendChild(cell);
     }
   }
-  container.appendChild(table);
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
+
+  // Add sprite overlays for already-placed ships
+  for (const ship of board.ships) {
+    if (isPlayer || ship.isSunk()) {
+      addShipOverlay(containerId, ship, isPlayer);
+    }
+  }
+}
+
+function addShipOverlay(containerId, ship, isPlayer) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const wrapper = container.querySelector('.board-wrapper') || container;
+
+  const firstCell = ship.cells[0];
+  const isHorizontal = ship.cells.length > 1 && ship.cells[0].r === ship.cells[1].r;
+  const spritePath = getSpritePath(ship.name, isPlayer, isHorizontal);
+
+  const img = document.createElement('img');
+  img.src = spritePath;
+  img.className = 'ship-overlay';
+  img.dataset.shipName = ship.name;
+
+  const cellSize = 36;
+  const headerOffset = cellSize; // one label row/col
+
+  const topPx = headerOffset + firstCell.r * cellSize;
+  const leftPx = headerOffset + firstCell.c * cellSize;
+
+  if (isHorizontal) {
+    // Use pre-rotated horizontal sprite — no CSS transform needed
+    img.style.top = topPx + 'px';
+    img.style.left = leftPx + 'px';
+    img.style.width = (ship.size * cellSize) + 'px';
+    img.style.height = cellSize + 'px';
+  } else {
+    // Vertical: sprite natural orientation matches grid layout
+    img.style.top = topPx + 'px';
+    img.style.left = leftPx + 'px';
+    img.style.width = cellSize + 'px';
+    img.style.height = (ship.size * cellSize) + 'px';
+  }
+
+  wrapper.appendChild(img);
+}
+
+function removeShipOverlays(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const wrapper = container.querySelector('.board-wrapper') || container;
+  wrapper.querySelectorAll('.ship-overlay').forEach(el => el.remove());
 }
 
 function getCellEl(boardId, r, c) {
@@ -554,10 +636,11 @@ function onPlayerCellClick(r, c) {
   playerBoard.placeShip(ship, r, c, placementHorizontal);
   clearPlacementPreview();
 
-  // Update cells
+  // Update cells and add sprite overlay
   for (const cell of ship.cells) {
     updateCellVisual('player-board', cell.r, cell.c, playerBoard, true);
   }
+  addShipOverlay('player-board', ship, true);
 
   placementIndex++;
   if (placementIndex >= SHIP_DEFS.length) {
@@ -593,11 +676,12 @@ function onOpponentCellClick(r, c) {
     cell.className = 'cell cell-hit anim-hit';
     playSound('hit');
   } else if (res.result === 'sunk') {
-    // Reveal all cells of sunk ship
+    // Reveal all cells of sunk ship with enemy sprite overlay
     for (const sc of res.ship.cells) {
       const sunkCell = getCellEl('opponent-board', sc.r, sc.c);
       sunkCell.className = 'cell cell-sunk anim-sunk';
     }
+    addShipOverlay('opponent-board', res.ship, false);
     playSound('sunk');
   } else {
     cell.className = 'cell cell-miss anim-miss';
