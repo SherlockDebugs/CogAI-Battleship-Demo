@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battleship 3D</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #0a0a1a; }
+    #game-canvas { display: block; width: 100vw; height: 100vh; }
+
+    /* UI Overlay */
+    #ui-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 10;
+    }
+    #ui-overlay > * { pointer-events: auto; }
+
+    /* Top bar */
+    #top-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; justify-content: center; align-items: center;
+      gap: 24px; padding: 12px 20px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+      color: white; font-family: system-ui, sans-serif;
+    }
+    #top-bar .label { font-size: 14px; color: #94a3b8; }
+    #top-bar .value { font-size: 14px; font-weight: 700; color: white; }
+
+    /* Phase message */
+    #phase-msg {
+      position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+      font-size: 18px; font-weight: 700; color: #facc15;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      font-family: system-ui, sans-serif;
+      white-space: nowrap;
+    }
+
+    /* Ship status panels */
+    #ship-status-panel {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 40px; padding: 12px 24px;
+      background: rgba(0,0,0,0.6); border-radius: 12px;
+      backdrop-filter: blur(8px);
+      font-family: system-ui, sans-serif; color: white; font-size: 13px;
+    }
+    #ship-status-panel h3 { font-size: 12px; color: #94a3b8; font-weight: 600; margin-bottom: 4px; }
+    #ship-status-panel ul { list-style: none; padding: 0; margin: 0; }
+    #ship-status-panel li { padding: 1px 0; }
+    .ship-sunk { text-decoration: line-through; color: #ef4444; }
+
+    /* Placement controls */
+    #placement-controls {
+      position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      font-family: system-ui, sans-serif; color: white;
+    }
+    #placement-controls button {
+      padding: 8px 20px; background: #4f46e5; color: white; border: none;
+      border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;
+    }
+    #placement-controls button:hover { background: #6366f1; }
+
+    /* Play Again button */
+    #play-again-btn {
+      position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%);
+      padding: 12px 32px; background: #4f46e5; color: white; border: none;
+      border-radius: 12px; font-size: 18px; font-weight: 700; cursor: pointer;
+      font-family: system-ui, sans-serif;
+      display: none;
+    }
+    #play-again-btn:hover { background: #6366f1; }
+
+    /* Difficulty screen */
+    #difficulty-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, #1a1a3e 0%, #0a0a1a 70%);
+      z-index: 100; font-family: system-ui, sans-serif; color: white;
+    }
+    #difficulty-screen h1 { font-size: 56px; font-weight: 800; margin-bottom: 8px; }
+    #difficulty-screen p { color: #94a3b8; margin-bottom: 32px; font-size: 18px; }
+    .diff-btn {
+      padding: 12px 32px; border: none; border-radius: 12px;
+      font-size: 18px; font-weight: 700; cursor: pointer; color: white;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .diff-btn:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    .diff-easy { background: #16a34a; }
+    .diff-medium { background: #ca8a04; box-shadow: 0 0 0 2px #facc15; }
+    .diff-hard { background: #dc2626; }
+
+    /* Board labels */
+    #board-labels {
+      position: absolute; top: 100px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 200px;
+      font-family: system-ui, sans-serif; color: white; font-size: 16px; font-weight: 600;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Audio elements -->
+  <audio id="hit-sound" src="./sounds/hit.mp3" preload="auto"></audio>
+  <audio id="miss-sound" src="./sounds/miss.wav" preload="auto"></audio>
+  <audio id="sunk-sound" src="./sounds/sunk.wav" preload="auto"></audio>
+  <audio id="win-sound" src="./sounds/win.mp3" preload="auto"></audio>
+  <audio id="lose-sound" src="./sounds/loss.wav" preload="auto"></audio>
+
+  <!-- Difficulty Selection Screen -->
+  <div id="difficulty-screen">
+    <h1>⚓ Battleship 3D</h1>
+    <p>Select difficulty and sink the enemy fleet!</p>
+    <div style="display:flex;gap:16px;margin-bottom:32px;">
+      <button class="diff-btn diff-easy" onclick="startGame('easy')">Easy</button>
+      <button class="diff-btn diff-medium" onclick="startGame('medium')">Medium</button>
+      <button class="diff-btn diff-hard" onclick="startGame('hard')">Hard</button>
+    </div>
+    <p style="color:#64748b;font-size:13px;">Default: Medium</p>
+  </div>
+
+  <!-- 3D Canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- UI Overlay -->
+  <div id="ui-overlay" style="display:none;">
+    <div id="top-bar">
+      <span><span class="label">Difficulty: </span><span class="value" id="diff-label">Medium</span></span>
+      <span><span class="label">Shots: </span><span class="value" id="shots-count">0</span></span>
+      <span><span class="label">Time: </span><span class="value" id="timer-display">0:00</span></span>
+    </div>
+
+    <div id="phase-msg">Place your ships! Click grid to place, press R to rotate.</div>
+
+    <div id="board-labels">
+      <span>Your Fleet</span>
+      <span>Opponent Waters</span>
+    </div>
+
+    <div id="placement-controls">
+      <p id="current-ship-label" style="font-size:14px;">Placing: <strong>Carrier (5)</strong> — Horizontal</p>
+      <button onclick="toggleOrientation()">Rotate (R)</button>
+    </div>
+
+    <button id="play-again-btn" onclick="resetGame()">Play Again</button>
+
+    <div id="ship-status-panel">
+      <div>
+        <h3>Your Ships</h3>
+        <ul id="player-ship-status"></ul>
+      </div>
+      <div>
+        <h3>Enemy Ships</h3>
+        <ul id="opponent-ship-status"></ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ============================================================
+// SOUND SYSTEM
+// ============================================================
+const SOUND_MAP = { hit: 'hit-sound', miss: 'miss-sound', sunk: 'sunk-sound', win: 'win-sound', lose: 'lose-sound' };
+
+function stopAllSounds() {
+  for (const id of Object.values(SOUND_MAP)) {
+    const el = document.getElementById(id);
+    if (el) { el.pause(); el.currentTime = 0; }
+  }
+}
+
+function playSound(type) {
+  const el = document.getElementById(SOUND_MAP[type]);
+  if (!el) return;
+  el.currentTime = 0;
+  el.volume = 0.7;
+  el.play().catch(() => {});
+}
+
+// ============================================================
+// SHIP CLASS
+// ============================================================
+class Ship {
+  constructor(name, size) {
+    this.name = name;
+    this.size = size;
+    this.hits = 0;
+    this.cells = [];
+  }
+  hit() { this.hits++; }
+  isSunk() { return this.hits >= this.size; }
+}
+
+// ============================================================
+// BOARD CLASS
+// ============================================================
+class Board {
+  constructor() {
+    this.grid = Array.from({ length: 10 }, () => Array(10).fill(null));
+    this.ships = [];
+    this.shots = Array.from({ length: 10 }, () => Array(10).fill(false));
+  }
+
+  canPlace(ship, r, c, horizontal) {
+    for (let i = 0; i < ship.size; i++) {
+      const nr = horizontal ? r : r + i;
+      const nc = horizontal ? c + i : c;
+      if (nr < 0 || nr >= 10 || nc < 0 || nc >= 10) return false;
+      if (this.grid[nr][nc] !== null) return false;
+    }
+    return true;
+  }
+
+  placeShip(ship, r, c, horizontal) {
+    ship.cells = [];
+    for (let i = 0; i < ship.size; i++) {
+      const nr = horizontal ? r : r + i;
+      const nc = horizontal ? c + i : c;
+      this.grid[nr][nc] = ship;
+      ship.cells.push({ r: nr, c: nc });
+    }
+    this.ships.push(ship);
+  }
+
+  receiveShot(r, c) {
+    if (this.shots[r][c]) return null;
+    this.shots[r][c] = true;
+    const target = this.grid[r][c];
+    if (target) {
+      target.hit();
+      if (target.isSunk()) return { result: 'sunk', ship: target };
+      return { result: 'hit', ship: target };
+    }
+    return { result: 'miss', ship: null };
+  }
+
+  allSunk() {
+    return this.ships.length > 0 && this.ships.every(s => s.isSunk());
+  }
+
+  randomPlace(shipDefs) {
+    for (const def of shipDefs) {
+      const ship = new Ship(def.name, def.size);
+      let placed = false;
+      while (!placed) {
+        const h = Math.random() < 0.5;
+        const r = Math.floor(Math.random() * 10);
+        const c = Math.floor(Math.random() * 10);
+        if (this.canPlace(ship, r, c, h)) {
+          this.placeShip(ship, r, c, h);
+          placed = true;
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// AI LOGIC
+// ============================================================
+class AI {
+  constructor(difficulty) {
+    this.difficulty = difficulty;
+    this.huntStack = [];
+    this.hitChain = [];
+    this.chainShip = null;
+    this.lastMoveWasChain = false;
+  }
+
+  getMove(board) {
+    if (this.difficulty === 'easy') return this.randomMove(board);
+    if (this.difficulty === 'medium') return this.huntMove(board);
+    return this.hardMove(board);
+  }
+
+  randomMove(board) {
+    const available = [];
+    for (let r = 0; r < 10; r++)
+      for (let c = 0; c < 10; c++)
+        if (!board.shots[r][c]) available.push({ r, c });
+    return available[Math.floor(Math.random() * available.length)];
+  }
+
+  huntMove(board) {
+    while (this.huntStack.length > 0) {
+      const cell = this.huntStack.pop();
+      if (!board.shots[cell.r][cell.c]) return cell;
+    }
+    return this.randomMove(board);
+  }
+
+  hardMove(board) {
+    this.lastMoveWasChain = false;
+    if (this.hitChain.length >= 2) {
+      const last = this.hitChain[this.hitChain.length - 1];
+      const prev = this.hitChain[this.hitChain.length - 2];
+      const dr = last.r - prev.r;
+      const dc = last.c - prev.c;
+      const next = { r: last.r + dr, c: last.c + dc };
+      if (next.r >= 0 && next.r < 10 && next.c >= 0 && next.c < 10 && !board.shots[next.r][next.c]) {
+        this.lastMoveWasChain = true;
+        return next;
+      }
+      const first = this.hitChain[0];
+      const rev = { r: first.r - dr, c: first.c - dc };
+      if (rev.r >= 0 && rev.r < 10 && rev.c >= 0 && rev.c < 10 && !board.shots[rev.r][rev.c]) {
+        this.lastMoveWasChain = true;
+        return rev;
+      }
+      this.hitChain = [];
+      this.chainShip = null;
+    }
+    return this.huntMove(board);
+  }
+
+  reportResult(r, c, result, ship) {
+    if (this.difficulty === 'easy') return;
+    if (result === 'hit') {
+      if (this.difficulty === 'hard') {
+        if (this.hitChain.length === 0 || this.chainShip === ship) {
+          this.hitChain.push({ r, c });
+          this.chainShip = ship;
+        } else if (!this.lastMoveWasChain) {
+          this.hitChain = [{ r, c }];
+          this.chainShip = ship;
+        }
+      }
+      const adj = [{ r: r - 1, c }, { r: r + 1, c }, { r, c: c - 1 }, { r, c: c + 1 }];
+      for (const a of adj) {
+        if (a.r >= 0 && a.r < 10 && a.c >= 0 && a.c < 10) {
+          this.huntStack.push(a);
+        }
+      }
+    }
+    if (result === 'miss') {
+      if (this.difficulty === 'hard' && this.lastMoveWasChain) {
+        this.hitChain = [];
+        this.chainShip = null;
+      }
+    }
+    if (result === 'sunk') {
+      if (ship) {
+        const sunkCells = new Set(ship.cells.map(cl => `${cl.r},${cl.c}`));
+        this.huntStack = this.huntStack.filter(h => !sunkCells.has(`${h.r},${h.c}`));
+      }
+      this.hitChain = [];
+      this.chainShip = null;
+    }
+  }
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const SHIP_DEFS = [
+  { name: 'Carrier', size: 5 },
+  { name: 'Battleship', size: 4 },
+  { name: 'Cruiser', size: 3 },
+  { name: 'Submarine', size: 3 },
+  { name: 'Destroyer', size: 2 },
+];
+
+let playerBoard, opponentBoard, ai;
+let difficulty = 'medium';
+let phase = 'placement';
+let placementIndex = 0;
+let placementHorizontal = true;
+let shotCount = 0;
+let timerInterval = null;
+let elapsedSeconds = 0;
+let gameActive = false;
+
+// ============================================================
+// THREE.JS GLOBALS
+// ============================================================
+let scene, camera, renderer, controls;
+let raycaster, mouse;
+let playerBoardGroup, opponentBoardGroup;
+let playerCells = [], opponentCells = [];
+let playerShipMeshes = [], opponentShipMeshes = [];
+let previewMeshCells = [];
+let waterMesh;
+let particles = [];
+let fireParticles = [];
+let confettiParticles = [];
+let clock;
+let animationCallbacks = [];
+
+const CELL_SIZE = 1.0;
+const BOARD_GAP = 14;
+const WATER_COLOR = 0x0a3d5c;
+const GRID_COLOR = 0x1e3a5f;
+const CELL_WATER_COLOR = 0x0d2847;
+const HIT_COLOR = 0xef4444;
+const MISS_COLOR = 0x3b82f6;
+const SUNK_COLOR = 0xf97316;
+const PREVIEW_VALID_COLOR = 0x22c55e;
+const PREVIEW_INVALID_COLOR = 0xef4444;
+const SHIP_PLAYER_COLOR = 0x5a7a9a;
+const SHIP_ENEMY_COLOR = 0x8b0000;
+
+// ============================================================
+// THREE.JS SETUP
+// ============================================================
+function initThreeJS() {
+  clock = new THREE.Clock();
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a1a);
+  scene.fog = new THREE.FogExp2(0x0a0a1a, 0.012);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(0, 22, 20);
+  camera.lookAt(0, 0, 2);
+
+  // Renderer
+  const canvas = document.getElementById('game-canvas');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  // Orbit Controls
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2.2;
+  controls.minDistance = 10;
+  controls.maxDistance = 50;
+  controls.target.set(0, 0, 2);
+  controls.enabled = false; // disabled until game starts
+
+  // Raycaster
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // Lights
+  const ambientLight = new THREE.AmbientLight(0x4488cc, 0.5);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.0);
+  dirLight.position.set(15, 25, 10);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
+  dirLight.shadow.camera.near = 1;
+  dirLight.shadow.camera.far = 60;
+  dirLight.shadow.camera.left = -25;
+  dirLight.shadow.camera.right = 25;
+  dirLight.shadow.camera.top = 25;
+  dirLight.shadow.camera.bottom = -25;
+  scene.add(dirLight);
+
+  const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x003366, 0.3);
+  scene.add(hemiLight);
+
+  // Water
+  createWater();
+
+  // Skybox-like gradient — use a large sphere
+  const skyGeo = new THREE.SphereGeometry(80, 32, 32);
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x0a1628) },
+      bottomColor: { value: new THREE.Color(0x000811) },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize(vWorldPosition).y;
+        gl_FragColor = vec4(mix(bottomColor, topColor, max(h, 0.0)), 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+  });
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+  // Events
+  window.addEventListener('resize', onWindowResize);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('click', onCanvasClick);
+  document.addEventListener('keydown', onKeyDown);
+
+  animate();
+}
+
+function createWater() {
+  const waterGeo = new THREE.PlaneGeometry(100, 100, 128, 128);
+  const waterMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColor1: { value: new THREE.Color(0x0a3d5c) },
+      uColor2: { value: new THREE.Color(0x062840) },
+    },
+    vertexShader: `
+      uniform float uTime;
+      varying vec2 vUv;
+      varying float vElevation;
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float wave1 = sin(pos.x * 0.5 + uTime * 0.8) * 0.15;
+        float wave2 = sin(pos.y * 0.7 + uTime * 0.6) * 0.1;
+        float wave3 = sin((pos.x + pos.y) * 0.3 + uTime * 1.2) * 0.08;
+        pos.z = wave1 + wave2 + wave3;
+        vElevation = pos.z;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor1;
+      uniform vec3 uColor2;
+      varying vec2 vUv;
+      varying float vElevation;
+      void main() {
+        float mixFactor = (vElevation + 0.3) / 0.6;
+        vec3 color = mix(uColor2, uColor1, clamp(mixFactor, 0.0, 1.0));
+        // Subtle foam on peaks
+        float foam = smoothstep(0.15, 0.25, vElevation);
+        color = mix(color, vec3(0.6, 0.8, 0.9), foam * 0.15);
+        gl_FragColor = vec4(color, 0.92);
+      }
+    `,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  waterMesh = new THREE.Mesh(waterGeo, waterMat);
+  waterMesh.rotation.x = -Math.PI / 2;
+  waterMesh.position.y = -0.3;
+  scene.add(waterMesh);
+}
+
+// ============================================================
+// BOARD CREATION (3D)
+// ============================================================
+function createBoard3D(isPlayer) {
+  const group = new THREE.Group();
+  const cells = [];
+  const offsetX = isPlayer ? -BOARD_GAP / 2 - 5 : BOARD_GAP / 2 - 5;
+  const offsetZ = -5;
+
+  // Base platform
+  const baseGeo = new THREE.BoxGeometry(10.6, 0.3, 10.6);
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x0d1f33,
+    roughness: 0.8,
+    metalness: 0.2,
+  });
+  const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+  baseMesh.position.set(offsetX + 4.5, -0.15, offsetZ + 4.5);
+  baseMesh.receiveShadow = true;
+  group.add(baseMesh);
+
+  // Grid cells
+  for (let r = 0; r < 10; r++) {
+    const row = [];
+    for (let c = 0; c < 10; c++) {
+      const cellGeo = new THREE.BoxGeometry(CELL_SIZE * 0.92, 0.08, CELL_SIZE * 0.92);
+      const cellMat = new THREE.MeshStandardMaterial({
+        color: CELL_WATER_COLOR,
+        roughness: 0.6,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const cellMesh = new THREE.Mesh(cellGeo, cellMat);
+      cellMesh.position.set(
+        offsetX + c * CELL_SIZE,
+        0.01,
+        offsetZ + r * CELL_SIZE
+      );
+      cellMesh.receiveShadow = true;
+      cellMesh.userData = { r, c, isPlayer, type: 'cell' };
+      group.add(cellMesh);
+      row.push(cellMesh);
+    }
+    cells.push(row);
+  }
+
+  // Grid border lines
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x1e3a5f, transparent: true, opacity: 0.4 });
+  for (let i = 0; i <= 10; i++) {
+    // Horizontal lines
+    const hPoints = [
+      new THREE.Vector3(offsetX - 0.5, 0.06, offsetZ - 0.5 + i),
+      new THREE.Vector3(offsetX + 9.5, 0.06, offsetZ - 0.5 + i),
+    ];
+    const hGeo = new THREE.BufferGeometry().setFromPoints(hPoints);
+    group.add(new THREE.Line(hGeo, lineMat));
+
+    // Vertical lines
+    const vPoints = [
+      new THREE.Vector3(offsetX - 0.5 + i, 0.06, offsetZ - 0.5),
+      new THREE.Vector3(offsetX - 0.5 + i, 0.06, offsetZ + 9.5),
+    ];
+    const vGeo = new THREE.BufferGeometry().setFromPoints(vPoints);
+    group.add(new THREE.Line(vGeo, lineMat));
+  }
+
+  // Row labels (A-J) and Column labels (1-10) using sprite text
+  for (let r = 0; r < 10; r++) {
+    const label = createTextSprite(String.fromCharCode(65 + r), 0.5);
+    label.position.set(offsetX - 1.2, 0.3, offsetZ + r * CELL_SIZE);
+    group.add(label);
+  }
+  for (let c = 0; c < 10; c++) {
+    const label = createTextSprite(String(c + 1), 0.5);
+    label.position.set(offsetX + c * CELL_SIZE, 0.3, offsetZ - 1.2);
+    group.add(label);
+  }
+
+  // Board title label
+  const titleText = isPlayer ? 'YOUR FLEET' : 'OPPONENT';
+  const titleSprite = createTextSprite(titleText, 0.8);
+  titleSprite.position.set(offsetX + 4.5, 0.5, offsetZ - 2.2);
+  group.add(titleSprite);
+
+  scene.add(group);
+  return { group, cells };
+}
+
+function createTextSprite(text, size) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const fontSize = 48;
+  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+  const metrics = ctx.measureText(text);
+  canvas.width = Math.max(256, Math.ceil(metrics.width) + 32);
+  canvas.height = 80;
+  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+  ctx.fillStyle = '#8899aa';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
+  const aspect = canvas.width / canvas.height;
+  sprite.scale.set(size * aspect, size, 1);
+  return sprite;
+}
+
+// ============================================================
+// SHIP MESH CREATION
+// ============================================================
+function createShipMesh(ship, isPlayer, isHorizontal) {
+  const color = isPlayer ? SHIP_PLAYER_COLOR : SHIP_ENEMY_COLOR;
+  const length = ship.size * CELL_SIZE;
+  const width = CELL_SIZE * 0.6;
+  const height = 0.35;
+
+  const group = new THREE.Group();
+
+  // Hull
+  const hullGeo = new THREE.BoxGeometry(
+    isHorizontal ? length * 0.9 : width,
+    height,
+    isHorizontal ? width : length * 0.9
+  );
+  const hullMat = new THREE.MeshStandardMaterial({
+    color: color,
+    roughness: 0.5,
+    metalness: 0.3,
+  });
+  const hull = new THREE.Mesh(hullGeo, hullMat);
+  hull.castShadow = true;
+  hull.receiveShadow = true;
+  group.add(hull);
+
+  // Deck detail (slightly lighter)
+  const deckGeo = new THREE.BoxGeometry(
+    isHorizontal ? length * 0.75 : width * 0.7,
+    0.06,
+    isHorizontal ? width * 0.7 : length * 0.75
+  );
+  const deckColor = isPlayer ? 0x7a9aba : 0xaa2020;
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: deckColor,
+    roughness: 0.6,
+    metalness: 0.2,
+  });
+  const deck = new THREE.Mesh(deckGeo, deckMat);
+  deck.position.y = height / 2 + 0.03;
+  deck.castShadow = true;
+  group.add(deck);
+
+  // Bridge/superstructure for larger ships
+  if (ship.size >= 3) {
+    const bridgeGeo = new THREE.BoxGeometry(
+      isHorizontal ? CELL_SIZE * 0.4 : width * 0.4,
+      0.2,
+      isHorizontal ? width * 0.4 : CELL_SIZE * 0.4
+    );
+    const bridgeMat = new THREE.MeshStandardMaterial({
+      color: isPlayer ? 0x8aaacc : 0xcc4040,
+      roughness: 0.4,
+      metalness: 0.4,
+    });
+    const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+    bridge.position.y = height / 2 + 0.16;
+    bridge.castShadow = true;
+    group.add(bridge);
+  }
+
+  // Bow (front point — a small pyramid-ish shape)
+  const bowGeo = new THREE.ConeGeometry(width * 0.35, CELL_SIZE * 0.3, 4);
+  const bowMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.5, metalness: 0.3 });
+  const bow = new THREE.Mesh(bowGeo, bowMat);
+  bow.castShadow = true;
+  if (isHorizontal) {
+    bow.rotation.z = Math.PI / 2;
+    bow.position.set(length * 0.45 + 0.05, 0, 0);
+  } else {
+    bow.rotation.x = 0;
+    bow.position.set(0, 0, -length * 0.45 - 0.05);
+  }
+  group.add(bow);
+
+  group.userData = { shipName: ship.name, isPlayer };
+  return group;
+}
+
+function addShipMesh3D(ship, isPlayer) {
+  const isHorizontal = ship.cells.length > 1 && ship.cells[0].r === ship.cells[1].r;
+  const mesh = createShipMesh(ship, isPlayer, isHorizontal);
+
+  const board = isPlayer ? playerBoardGroup : opponentBoardGroup;
+  const cells = isPlayer ? playerCells : opponentCells;
+  const firstCell = cells[ship.cells[0].r][ship.cells[0].c];
+
+  // Position at center of ship span
+  const midIdx = (ship.size - 1) / 2;
+  let cx, cz;
+  if (isHorizontal) {
+    cx = firstCell.position.x + midIdx * CELL_SIZE;
+    cz = firstCell.position.z;
+  } else {
+    cx = firstCell.position.x;
+    cz = firstCell.position.z + midIdx * CELL_SIZE;
+  }
+  mesh.position.set(cx, 0.2, cz);
+
+  scene.add(mesh);
+
+  const meshList = isPlayer ? playerShipMeshes : opponentShipMeshes;
+  meshList.push({ ship, mesh });
+  return mesh;
+}
+
+// ============================================================
+// CELL STATE UPDATES (3D)
+// ============================================================
+function updateCellColor(cellMesh, state) {
+  const mat = cellMesh.material;
+  switch (state) {
+    case 'water':
+      mat.color.setHex(CELL_WATER_COLOR);
+      mat.emissive && mat.emissive.setHex(0x000000);
+      mat.opacity = 0.85;
+      break;
+    case 'ship':
+      mat.color.setHex(0x3a5a7a);
+      mat.opacity = 0.9;
+      break;
+    case 'hit':
+      mat.color.setHex(HIT_COLOR);
+      mat.emissive.setHex(0x440000);
+      mat.opacity = 1.0;
+      break;
+    case 'miss':
+      mat.color.setHex(MISS_COLOR);
+      mat.emissive.setHex(0x000022);
+      mat.opacity = 0.9;
+      break;
+    case 'sunk':
+      mat.color.setHex(SUNK_COLOR);
+      mat.emissive.setHex(0x331100);
+      mat.opacity = 1.0;
+      break;
+    case 'preview-valid':
+      mat.color.setHex(PREVIEW_VALID_COLOR);
+      mat.emissive.setHex(0x002200);
+      mat.opacity = 0.8;
+      break;
+    case 'preview-invalid':
+      mat.color.setHex(PREVIEW_INVALID_COLOR);
+      mat.emissive.setHex(0x220000);
+      mat.opacity = 0.8;
+      break;
+  }
+}
+
+// ============================================================
+// PARTICLE EFFECTS
+// ============================================================
+function spawnExplosion(position) {
+  const count = 25;
+  for (let i = 0; i < count; i++) {
+    const geo = new THREE.SphereGeometry(0.06 + Math.random() * 0.08, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: Math.random() > 0.5 ? 0xff6600 : 0xff2200,
+      transparent: true,
+      opacity: 1,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    mesh.position.y += 0.2;
+    scene.add(mesh);
+
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 4,
+      Math.random() * 5 + 2,
+      (Math.random() - 0.5) * 4
+    );
+    particles.push({
+      mesh, vel, life: 1.0, decay: 1.5 + Math.random() * 1.0,
+      gravity: true,
+    });
+  }
+  // Smoke
+  for (let i = 0; i < 8; i++) {
+    const geo = new THREE.SphereGeometry(0.15 + Math.random() * 0.15, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x444444,
+      transparent: true,
+      opacity: 0.6,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    mesh.position.y += 0.3;
+    scene.add(mesh);
+
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 1,
+      Math.random() * 2 + 1,
+      (Math.random() - 0.5) * 1
+    );
+    particles.push({
+      mesh, vel, life: 1.0, decay: 0.8 + Math.random() * 0.5,
+      gravity: false, grow: true,
+    });
+  }
+}
+
+function spawnSplash(position) {
+  const count = 20;
+  for (let i = 0; i < count; i++) {
+    const geo = new THREE.SphereGeometry(0.04 + Math.random() * 0.06, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x6699cc,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    mesh.position.y += 0.1;
+    scene.add(mesh);
+
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 2;
+    const vel = new THREE.Vector3(
+      Math.cos(angle) * speed * 0.5,
+      Math.random() * 4 + 2,
+      Math.sin(angle) * speed * 0.5
+    );
+    particles.push({
+      mesh, vel, life: 1.0, decay: 2.0 + Math.random(),
+      gravity: true,
+    });
+  }
+  // Water column
+  for (let i = 0; i < 5; i++) {
+    const geo = new THREE.CylinderGeometry(0.05, 0.12, 0.4 + Math.random() * 0.4, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x88bbdd,
+      transparent: true,
+      opacity: 0.5,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position);
+    mesh.position.y += 0.5;
+    scene.add(mesh);
+
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.3,
+      Math.random() * 3 + 2,
+      (Math.random() - 0.5) * 0.3
+    );
+    particles.push({
+      mesh, vel, life: 1.0, decay: 1.5,
+      gravity: true,
+    });
+  }
+}
+
+function spawnFireOnCell(position) {
+  const fire = {
+    position: position.clone(),
+    particles: [],
+    active: true,
+  };
+  fireParticles.push(fire);
+}
+
+function updateFireParticles(delta) {
+  for (const fire of fireParticles) {
+    if (!fire.active) continue;
+    // Spawn new fire particles
+    if (Math.random() < 0.3) {
+      const geo = new THREE.SphereGeometry(0.05 + Math.random() * 0.05, 4, 4);
+      const mat = new THREE.MeshBasicMaterial({
+        color: Math.random() > 0.5 ? 0xff4400 : 0xff8800,
+        transparent: true,
+        opacity: 0.7,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(fire.position);
+      mesh.position.y += 0.3;
+      mesh.position.x += (Math.random() - 0.5) * 0.3;
+      mesh.position.z += (Math.random() - 0.5) * 0.3;
+      scene.add(mesh);
+      fire.particles.push({
+        mesh,
+        vel: new THREE.Vector3(0, 1.5 + Math.random(), 0),
+        life: 1.0,
+        decay: 3.0,
+      });
+    }
+    // Update existing fire particles
+    for (let i = fire.particles.length - 1; i >= 0; i--) {
+      const p = fire.particles[i];
+      p.life -= delta * p.decay;
+      if (p.life <= 0) {
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+        fire.particles.splice(i, 1);
+        continue;
+      }
+      p.mesh.position.add(p.vel.clone().multiplyScalar(delta));
+      p.mesh.material.opacity = p.life * 0.7;
+      p.mesh.scale.setScalar(p.life);
+    }
+  }
+}
+
+function spawn3DConfetti() {
+  const colors = [0xef4444, 0x22c55e, 0x3b82f6, 0xf97316, 0xa855f7, 0xeab308];
+  for (let i = 0; i < 120; i++) {
+    const geo = new THREE.BoxGeometry(0.15, 0.15, 0.02);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colors[Math.floor(Math.random() * colors.length)],
+      transparent: true,
+      opacity: 1,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(
+      (Math.random() - 0.5) * 20,
+      15 + Math.random() * 10,
+      (Math.random() - 0.5) * 20
+    );
+    mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    scene.add(mesh);
+
+    confettiParticles.push({
+      mesh,
+      vel: new THREE.Vector3((Math.random() - 0.5) * 2, -(2 + Math.random() * 3), (Math.random() - 0.5) * 2),
+      rotVel: new THREE.Vector3(Math.random() * 5, Math.random() * 5, Math.random() * 5),
+      life: 4 + Math.random() * 3,
+    });
+  }
+}
+
+function removeAllConfetti() {
+  for (const c of confettiParticles) {
+    scene.remove(c.mesh);
+    c.mesh.geometry.dispose();
+    c.mesh.material.dispose();
+  }
+  confettiParticles = [];
+}
+
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Update water
+  if (waterMesh) {
+    waterMesh.material.uniforms.uTime.value = elapsed;
+  }
+
+  // Update orbit controls
+  controls.update();
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= delta * p.decay;
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      particles.splice(i, 1);
+      continue;
+    }
+    p.mesh.position.add(p.vel.clone().multiplyScalar(delta));
+    if (p.gravity) p.vel.y -= 9.8 * delta;
+    p.mesh.material.opacity = Math.max(0, p.life);
+    if (p.grow) p.mesh.scale.addScalar(delta * 0.5);
+  }
+
+  // Update fire
+  updateFireParticles(delta);
+
+  // Update confetti
+  for (let i = confettiParticles.length - 1; i >= 0; i--) {
+    const c = confettiParticles[i];
+    c.life -= delta;
+    if (c.life <= 0) {
+      scene.remove(c.mesh);
+      c.mesh.geometry.dispose();
+      c.mesh.material.dispose();
+      confettiParticles.splice(i, 1);
+      continue;
+    }
+    c.mesh.position.add(c.vel.clone().multiplyScalar(delta));
+    c.mesh.rotation.x += c.rotVel.x * delta;
+    c.mesh.rotation.y += c.rotVel.y * delta;
+    c.mesh.rotation.z += c.rotVel.z * delta;
+    if (c.life < 1) c.mesh.material.opacity = c.life;
+  }
+
+  // Animation callbacks (for tweens)
+  for (let i = animationCallbacks.length - 1; i >= 0; i--) {
+    const done = animationCallbacks[i](delta);
+    if (done) animationCallbacks.splice(i, 1);
+  }
+
+  renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ============================================================
+// INTERACTION
+// ============================================================
+function onMouseMove(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  if (phase === 'placement') {
+    handlePlacementHover();
+  }
+}
+
+function onCanvasClick(event) {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  if (phase === 'placement') {
+    const intersects = raycaster.intersectObjects(playerCells.flat());
+    if (intersects.length > 0) {
+      const cell = intersects[0].object;
+      const { r, c } = cell.userData;
+      onPlayerCellClick(r, c);
+    }
+  } else if (phase === 'battle' && gameActive) {
+    const intersects = raycaster.intersectObjects(opponentCells.flat());
+    if (intersects.length > 0) {
+      const cell = intersects[0].object;
+      const { r, c } = cell.userData;
+      onOpponentCellClick(r, c);
+    }
+  }
+}
+
+function handlePlacementHover() {
+  // Clear previous preview
+  clearPlacementPreview3D();
+
+  if (phase !== 'placement' || placementIndex >= SHIP_DEFS.length) return;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(playerCells.flat());
+  if (intersects.length === 0) return;
+
+  const cell = intersects[0].object;
+  const { r, c } = cell.userData;
+
+  const def = SHIP_DEFS[placementIndex];
+  const ship = new Ship(def.name, def.size);
+  const valid = playerBoard.canPlace(ship, r, c, placementHorizontal);
+
+  for (let i = 0; i < def.size; i++) {
+    const nr = placementHorizontal ? r : r + i;
+    const nc = placementHorizontal ? c + i : c;
+    if (nr >= 0 && nr < 10 && nc >= 0 && nc < 10) {
+      if (!playerBoard.grid[nr][nc]) {
+        const cellMesh = playerCells[nr][nc];
+        updateCellColor(cellMesh, valid ? 'preview-valid' : 'preview-invalid');
+        previewMeshCells.push({ r: nr, c: nc });
+      }
+    }
+  }
+}
+
+function clearPlacementPreview3D() {
+  for (const p of previewMeshCells) {
+    const cellMesh = playerCells[p.r][p.c];
+    if (playerBoard.grid[p.r][p.c]) {
+      updateCellColor(cellMesh, 'ship');
+    } else {
+      updateCellColor(cellMesh, 'water');
+    }
+  }
+  previewMeshCells = [];
+}
+
+function onKeyDown(e) {
+  if (e.key === 'r' || e.key === 'R') {
+    if (phase === 'placement') toggleOrientation();
+  }
+}
+
+// ============================================================
+// GAME LOGIC (3D-integrated)
+// ============================================================
+function startGame(diff) {
+  difficulty = diff;
+  document.getElementById('difficulty-screen').style.display = 'none';
+  document.getElementById('ui-overlay').style.display = 'block';
+  document.getElementById('diff-label').textContent = diff.charAt(0).toUpperCase() + diff.slice(1);
+  controls.enabled = true;
+  initGame();
+}
+
+function resetGame() {
+  stopTimer();
+  // Clean up 3D scene
+  cleanupBoards();
+  removeAllConfetti();
+  // Clean up fire particles
+  for (const fire of fireParticles) {
+    fire.active = false;
+    for (const p of fire.particles) {
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+    }
+  }
+  fireParticles = [];
+  // Clean up regular particles
+  for (const p of particles) {
+    scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+  }
+  particles = [];
+  animationCallbacks = [];
+
+  document.getElementById('ui-overlay').style.display = 'none';
+  document.getElementById('difficulty-screen').style.display = 'flex';
+  document.getElementById('play-again-btn').style.display = 'none';
+  controls.enabled = false;
+}
+
+function cleanupBoards() {
+  // Remove ship meshes
+  for (const sm of playerShipMeshes) {
+    scene.remove(sm.mesh);
+    sm.mesh.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  for (const sm of opponentShipMeshes) {
+    scene.remove(sm.mesh);
+    sm.mesh.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  playerShipMeshes = [];
+  opponentShipMeshes = [];
+
+  // Remove board groups
+  if (playerBoardGroup) {
+    scene.remove(playerBoardGroup.group);
+    playerBoardGroup.group.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+    });
+  }
+  if (opponentBoardGroup) {
+    scene.remove(opponentBoardGroup.group);
+    opponentBoardGroup.group.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+    });
+  }
+  playerCells = [];
+  opponentCells = [];
+}
+
+function initGame() {
+  playerBoard = new Board();
+  opponentBoard = new Board();
+  opponentBoard.randomPlace(SHIP_DEFS);
+  ai = new AI(difficulty);
+
+  phase = 'placement';
+  placementIndex = 0;
+  placementHorizontal = true;
+  shotCount = 0;
+  elapsedSeconds = 0;
+  gameActive = false;
+
+  document.getElementById('shots-count').textContent = '0';
+  document.getElementById('timer-display').textContent = '0:00';
+  document.getElementById('play-again-btn').style.display = 'none';
+  document.getElementById('placement-controls').style.display = 'flex';
+  document.getElementById('phase-msg').textContent = 'Place your ships! Click grid to place, press R to rotate.';
+  document.getElementById('phase-msg').style.color = '#facc15';
+
+  // Create 3D boards
+  playerBoardGroup = createBoard3D(true);
+  playerCells = playerBoardGroup.cells;
+  opponentBoardGroup = createBoard3D(false);
+  opponentCells = opponentBoardGroup.cells;
+
+  updateShipStatus();
+  updatePlacementLabel();
+  removeAllConfetti();
+
+  // Reset camera to focus on player board during placement
+  animateCamera(new THREE.Vector3(-7, 16, 14), new THREE.Vector3(-7, 0, 2), 1.0);
+}
+
+function animateCamera(targetPos, targetLook, duration) {
+  const startPos = camera.position.clone();
+  const startTarget = controls.target.clone();
+  let elapsed = 0;
+
+  animationCallbacks.push((delta) => {
+    elapsed += delta;
+    const t = Math.min(elapsed / duration, 1);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+
+    camera.position.lerpVectors(startPos, targetPos, ease);
+    controls.target.lerpVectors(startTarget, targetLook, ease);
+    controls.update();
+
+    return t >= 1;
+  });
+}
+
+function toggleOrientation() {
+  placementHorizontal = !placementHorizontal;
+  updatePlacementLabel();
+}
+
+function updatePlacementLabel() {
+  if (placementIndex >= SHIP_DEFS.length) return;
+  const def = SHIP_DEFS[placementIndex];
+  document.getElementById('current-ship-label').innerHTML =
+    `Placing: <strong>${def.name} (${def.size})</strong> — ${placementHorizontal ? 'Horizontal' : 'Vertical'}`;
+}
+
+function onPlayerCellClick(r, c) {
+  if (phase !== 'placement' || placementIndex >= SHIP_DEFS.length) return;
+  const def = SHIP_DEFS[placementIndex];
+  const ship = new Ship(def.name, def.size);
+  if (!playerBoard.canPlace(ship, r, c, placementHorizontal)) return;
+
+  playerBoard.placeShip(ship, r, c, placementHorizontal);
+  clearPlacementPreview3D();
+
+  // Update cell colors
+  for (const cell of ship.cells) {
+    updateCellColor(playerCells[cell.r][cell.c], 'ship');
+  }
+
+  // Add 3D ship mesh
+  addShipMesh3D(ship, true);
+
+  placementIndex++;
+  if (placementIndex >= SHIP_DEFS.length) {
+    phase = 'battle';
+    document.getElementById('placement-controls').style.display = 'none';
+    document.getElementById('phase-msg').textContent = 'Battle! Click opponent\'s grid to fire.';
+    document.getElementById('phase-msg').style.color = '#4ade80';
+    startTimer();
+    gameActive = true;
+
+    // Animate camera to show both boards
+    animateCamera(new THREE.Vector3(0, 22, 20), new THREE.Vector3(0, 0, 2), 1.5);
+  } else {
+    updatePlacementLabel();
+  }
+  updateShipStatus();
+}
+
+function onOpponentCellClick(r, c) {
+  if (phase !== 'battle' || !gameActive) return;
+  if (opponentBoard.shots[r][c]) return;
+
+  gameActive = false;
+  const res = opponentBoard.receiveShot(r, c);
+  if (!res) { gameActive = true; return; }
+
+  shotCount++;
+  document.getElementById('shots-count').textContent = shotCount;
+
+  const cellMesh = opponentCells[r][c];
+  const cellPos = cellMesh.position.clone();
+
+  if (res.result === 'hit') {
+    updateCellColor(cellMesh, 'hit');
+    spawnExplosion(cellPos);
+    spawnFireOnCell(cellPos);
+    playSound('hit');
+    animateCellPop(cellMesh);
+  } else if (res.result === 'sunk') {
+    for (const sc of res.ship.cells) {
+      updateCellColor(opponentCells[sc.r][sc.c], 'sunk');
+    }
+    spawnExplosion(cellPos);
+    addShipMesh3D(res.ship, false);
+    // Animate sinking of the newly revealed ship
+    const shipEntry = opponentShipMeshes.find(s => s.ship === res.ship);
+    if (shipEntry) {
+      animateSinking(shipEntry.mesh);
+    }
+    playSound('sunk');
+  } else {
+    updateCellColor(cellMesh, 'miss');
+    spawnSplash(cellPos);
+    playSound('miss');
+  }
+
+  updateShipStatus();
+
+  // Check win
+  if (opponentBoard.allSunk()) {
+    phase = 'over';
+    stopTimer();
+    stopAllSounds();
+    playSound('win');
+    document.getElementById('phase-msg').textContent = `You Win! 🎉 ${shotCount} shots in ${formatTime(elapsedSeconds)}`;
+    document.getElementById('phase-msg').style.color = '#4ade80';
+    document.getElementById('play-again-btn').style.display = 'block';
+    spawn3DConfetti();
+    return;
+  }
+
+  // AI turn after short delay
+  setTimeout(aiTurn, 800);
+}
+
+function aiTurn() {
+  if (phase !== 'battle') return;
+  const move = ai.getMove(playerBoard);
+  if (!move) return;
+
+  const res = playerBoard.receiveShot(move.r, move.c);
+  if (!res) { gameActive = true; return; }
+
+  ai.reportResult(move.r, move.c, res.result, res.ship);
+
+  const cellMesh = playerCells[move.r][move.c];
+  const cellPos = cellMesh.position.clone();
+
+  if (res.result === 'hit') {
+    updateCellColor(cellMesh, 'hit');
+    spawnExplosion(cellPos);
+    spawnFireOnCell(cellPos);
+    playSound('hit');
+    animateCellPop(cellMesh);
+  } else if (res.result === 'sunk') {
+    for (const sc of res.ship.cells) {
+      updateCellColor(playerCells[sc.r][sc.c], 'sunk');
+    }
+    spawnExplosion(cellPos);
+    // Animate player ship sinking
+    const shipEntry = playerShipMeshes.find(s => s.ship === res.ship);
+    if (shipEntry) {
+      animateSinking(shipEntry.mesh);
+    }
+    playSound('sunk');
+  } else {
+    updateCellColor(cellMesh, 'miss');
+    spawnSplash(cellPos);
+    playSound('miss');
+  }
+
+  updateShipStatus();
+
+  // Check loss
+  if (playerBoard.allSunk()) {
+    phase = 'over';
+    stopTimer();
+    stopAllSounds();
+    playSound('lose');
+    document.getElementById('phase-msg').textContent = `You Lost! AI sank your fleet in ${formatTime(elapsedSeconds)}.`;
+    document.getElementById('phase-msg').style.color = '#ef4444';
+    document.getElementById('play-again-btn').style.display = 'block';
+    return;
+  }
+
+  gameActive = true;
+}
+
+function animateCellPop(cellMesh) {
+  const origScale = cellMesh.scale.clone();
+  let elapsed = 0;
+  animationCallbacks.push((delta) => {
+    elapsed += delta;
+    const t = Math.min(elapsed / 0.3, 1);
+    const scale = 1 + Math.sin(t * Math.PI) * 0.4;
+    cellMesh.scale.set(origScale.x * scale, origScale.y * (1 + (scale - 1) * 3), origScale.z * scale);
+    return t >= 1;
+  });
+}
+
+function animateSinking(shipMesh) {
+  let elapsed = 0;
+  const startY = shipMesh.position.y;
+  animationCallbacks.push((delta) => {
+    elapsed += delta;
+    const t = Math.min(elapsed / 2.5, 1);
+    // Sink down and tilt
+    shipMesh.position.y = startY - t * 1.5;
+    shipMesh.rotation.z = t * 0.3;
+    shipMesh.rotation.x = t * 0.15;
+    // Fade children
+    shipMesh.traverse(child => {
+      if (child.material && child.material.transparent !== undefined) {
+        child.material.transparent = true;
+        child.material.opacity = Math.max(0, 1 - t * 0.7);
+      }
+    });
+    if (t >= 1) {
+      // Remove after sinking
+      setTimeout(() => {
+        scene.remove(shipMesh);
+        shipMesh.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+      }, 500);
+    }
+    return t >= 1;
+  });
+}
+
+// ============================================================
+// SHIP STATUS
+// ============================================================
+function updateShipStatus() {
+  renderShipList('player-ship-status', playerBoard ? playerBoard.ships : []);
+  renderShipList('opponent-ship-status', opponentBoard ? opponentBoard.ships : []);
+}
+
+function renderShipList(elId, ships) {
+  const ul = document.getElementById(elId);
+  ul.innerHTML = '';
+  for (const ship of ships) {
+    const li = document.createElement('li');
+    li.textContent = `${ship.name} (${ship.size})`;
+    if (ship.isSunk()) li.className = 'ship-sunk';
+    ul.appendChild(li);
+  }
+  if (ships.length === 0) {
+    for (const def of SHIP_DEFS) {
+      const li = document.createElement('li');
+      li.textContent = `${def.name} (${def.size})`;
+      li.style.color = '#64748b';
+      ul.appendChild(li);
+    }
+  }
+}
+
+// ============================================================
+// TIMER
+// ============================================================
+function startTimer() {
+  elapsedSeconds = 0;
+  timerInterval = setInterval(() => {
+    elapsedSeconds++;
+    document.getElementById('timer-display').textContent = formatTime(elapsedSeconds);
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+initThreeJS();
+</script>
+</body>
+</html>
