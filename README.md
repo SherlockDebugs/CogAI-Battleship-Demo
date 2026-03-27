@@ -8,7 +8,7 @@ A complete browser-based Battleship game — play against a smart AI opponent wi
 
 ## How to Play
 
-1. **Open `index.html`** in any modern browser (or serve via any static file server).
+1. **Open `index.html`** (2D) or **`index-3d.html`** (3D) in any modern browser (or serve via any static file server).
 2. **Select Difficulty** — Easy, Medium, or Hard (default: Medium).
 3. **Place Your Ships** — Click cells on "Your Fleet" grid to place each ship.
    - Press **R** or click the **Rotate** button to toggle between horizontal and vertical placement.
@@ -33,25 +33,28 @@ A complete browser-based Battleship game — play against a smart AI opponent wi
 - **Sound effects** for hit, miss, sunk, win, and loss events
 - **Shot counter** and **elapsed timer**
 - **Ship status lists** for both fleets (crossed out when sunk)
-- **CSS animations** — flash/scale on hits, ripple on misses, pulse on sunk
-- **Confetti** on victory
+- **CSS animations** (2D) / **3D particle effects** (3D) — explosions, water splashes, fire on damaged ships
+- **Confetti** on victory (CSS in 2D, 3D particles in 3D version)
+- **3D version** with animated ocean water shader, orbit camera controls, ship sinking animations
 - **Play Again** button to restart with a new difficulty
 
 ---
 
 ## Tech Stack
 
-- **Single file**: `index.html` — no build step required
+- **Single file**: `index.html` (2D) / `index-3d.html` (3D) — no build step required
 - **Tailwind CSS** via CDN for styling
 - **Vanilla JavaScript** — modular classes (`Ship`, `Board`, `AI`)
 - **HTML5 Audio** for sound effects
+- **Three.js** via CDN for 3D version (scene, lighting, shaders, raycasting)
 
 ---
 
 ## Project Structure
 
 ```
-├── index.html          # Complete game (HTML + CSS + JS)
+├── index.html          # Complete 2D game (HTML + CSS + JS)
+├── index-3d.html       # Complete 3D game (Three.js + HTML overlay)
 ├── sounds/
 │   ├── hit.mp3         # Hit sound effect
 │   ├── miss.wav        # Miss sound effect
@@ -75,7 +78,7 @@ All sounds are **CC0 (public domain)** from [Freesound.org](https://freesound.or
 ```bash
 # Any static file server works:
 python3 -m http.server 8080
-# Then open http://localhost:8080
+# Then open http://localhost:8080 (2D) or http://localhost:8080/index-3d.html (3D)
 ```
 
 Or simply open `index.html` directly in your browser (sounds may require a server due to browser autoplay policies).
